@@ -17,25 +17,10 @@ pipeline {
       defaultValue: '',
       description: 'Optional image tag. Defaults to Jenkins build number.'
     )
-    string(
-      name: 'REGISTRY_URL',
-      defaultValue: 'docker.io',
-      description: 'Docker registry (docker.io, ghcr.io, etc.)'
-    )
-    booleanParam(
-      name: 'PUSH_IMAGE',
-      defaultValue: false,
-      description: 'Push the image after a successful build'
-    )
-    string(
-      name: 'DOCKER_CREDENTIALS_ID',
-      defaultValue: 'docker-registry',
-      description: 'Jenkins credentials ID for Docker registry'
-    )
     booleanParam(
       name: 'INJECT_ENV_FILE',
       defaultValue: true,
-      description: 'Inject a managed .env file into the workspace'
+      description: 'Inject .env file from Jenkins credentials'
     )
     string(
       name: 'ENV_FILE_CREDENTIALS_ID',
@@ -51,6 +36,11 @@ pipeline {
 
   environment {
     DOCKER_BUILDKIT = '1'
+
+    // 🔒 CONSTANTS — change only if you really mean it
+    CONTAINER_NAME = 'email-verify-engine'
+    HOST_PORT = '5000'
+    CONTAINER_PORT = '5000'
   }
 
   stages {
@@ -96,37 +86,36 @@ pipeline {
       }
     }
 
-    stage('Docker Push') {
-      when {
-        expression { params.PUSH_IMAGE }
-      }
+    stage('Deploy Container') {
       steps {
-        withCredentials([
-          usernamePassword(
-            credentialsId: params.DOCKER_CREDENTIALS_ID,
-            usernameVariable: 'REGISTRY_USER',
-            passwordVariable: 'REGISTRY_PASS'
-          )
-        ]) {
-          sh '''
-            echo "$REGISTRY_PASS" | docker login ${REGISTRY_URL} \
-              --username "$REGISTRY_USER" \
-              --password-stdin
+        sh '''
+          echo "Deploying container: ${CONTAINER_NAME}"
+          echo "Stopping existing container (if any)..."
 
-            docker tag ${IMAGE_REF} ${REGISTRY_URL}/${IMAGE_REF}
-            docker push ${REGISTRY_URL}/${IMAGE_REF}
-          '''
-        }
+          docker stop ${CONTAINER_NAME} || true
+          docker rm ${CONTAINER_NAME} || true
+
+          echo "Starting new container on port ${HOST_PORT}"
+
+          docker run -d \
+            --name ${CONTAINER_NAME} \
+            --restart unless-stopped \
+            --env-file ${ENV_TARGET_FILE} \
+            -p ${HOST_PORT}:${CONTAINER_PORT} \
+            ${IMAGE_REF}
+
+          echo "Container ${CONTAINER_NAME} is running"
+        '''
       }
     }
   }
 
   post {
     success {
-      echo "Build successful 🟢 Image: ${params.REGISTRY_URL}/${env.IMAGE_REF}"
+      echo "✅ Deployment successful — App live on port ${HOST_PORT}"
     }
     failure {
-      echo "Build failed 🔴 Check the logs above."
+      echo "❌ Deployment failed — check logs above"
     }
     always {
       cleanWs(cleanWhenNotBuilt: false)
