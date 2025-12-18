@@ -25,6 +25,10 @@ export default function Dashboard() {
   // File upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
 
+  // Paste names state
+  const [pastedNames, setPastedNames] = useState("");
+  const [pasteLoading, setPasteLoading] = useState(false);
+
   // Step 1: Fetch Slack Users (real API call)
   const handleFetchSlack = async () => {
     setProcessingStep(1);
@@ -88,6 +92,44 @@ export default function Dashboard() {
     } catch (err: any) {
       console.error("Error uploading users:", err);
       setProcessingStep(null);
+      toast({
+        title: "Error",
+        description: err?.message || "Failed to upload user list. Check server logs.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Step 2: Paste Names (alternative to file upload)
+  const handlePasteNames = async () => {
+    if (!pastedNames.trim()) return;
+
+    setPasteLoading(true);
+    setProcessingStep(2);
+    try {
+      const res = await fetch("/api/upload-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ names: pastedNames }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data.message || "Failed to upload user list");
+      }
+
+      setProcessingStep(null);
+      setPasteLoading(false);
+      setCurrentStep(3);
+      toast({
+        title: "Names Uploaded",
+        description: `User list has been written to sheet "${data.tab}" (${data.count} rows).`,
+      });
+    } catch (err: any) {
+      console.error("Error uploading users:", err);
+      setProcessingStep(null);
+      setPasteLoading(false);
       toast({
         title: "Error",
         description: err?.message || "Failed to upload user list. Check server logs.",
@@ -208,7 +250,7 @@ export default function Dashboard() {
             <StepCard
               stepNumber={2}
               title="Upload New User List"
-              description="Upload a CSV file containing the list of new employees to onboard."
+              description="Upload a CSV file or paste names to onboard new employees."
               status={currentStep > 2 ? "completed" : currentStep === 2 ? (processingStep === 2 ? "processing" : "pending") : "disabled"}
               onAction={handleUpload}
               actionLabel="Upload & Parse"
@@ -225,6 +267,28 @@ export default function Dashboard() {
                   />
                 </div>
                 <p className="text-xs text-slate-500">Required columns: Full Name, Department</p>
+              </div>
+              <Separator className="my-4" />
+              <div className="grid w-full max-w-sm items-center gap-1.5">
+                <Label htmlFor="paste-names">Or paste names (one per line, optionally comma-separated with department):</Label>
+                <textarea
+                  id="paste-names"
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+                  rows={6}
+                  placeholder="Jane Doe, Engineering&#10;John Smith, Marketing"
+                  value={pastedNames}
+                  onChange={e => setPastedNames(e.target.value)}
+                  disabled={currentStep !== 2 || pasteLoading}
+                />
+                <Button
+                  type="button"
+                  className="w-full mt-2"
+                  onClick={handlePasteNames}
+                  disabled={currentStep !== 2 || pasteLoading}
+                >
+                  {pasteLoading ? "Uploading..." : "Paste & Parse"}
+                </Button>
+                <p className="text-xs text-slate-500">Format: "Full Name, Department" per line, or just names.</p>
               </div>
             </StepCard>
 

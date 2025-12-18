@@ -64,35 +64,58 @@ export async function registerRoutes(
     upload.single("file"),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const file = (req as any).file as Express.Multer.File | undefined;
-        if (!file) {
-          return res
-            .status(400)
-            .json({ ok: false, message: "No file uploaded" });
-        }
+        let rows: (string | null)[][] = [];
+        // Handle pasted names (JSON body)
+        if (req.is("application/json") && req.body && typeof req.body.names === "string") {
+          const lines = req.body.names
+            .split(/\r?\n/)
+            .map((l: string) => l.trim())
+            .filter((l: string) => l.length > 0);
 
-        const csv = file.buffer.toString("utf8");
-        const lines = csv
-          .split(/\r?\n/)
-          .filter((l: string) => l.trim().length > 0);
+          if (lines.length === 0) {
+            return res
+              .status(400)
+              .json({ ok: false, message: "No names provided" });
+          }
 
-        if (lines.length === 0) {
-          return res
-            .status(400)
-            .json({ ok: false, message: "CSV file is empty" });
-        }
-
-        // Assume first line is header, but we will enforce our own header in Sheets
-        const [, ...dataLines] = lines;
-
-        const rows: (string | null)[][] = dataLines
-          .map((line: string) => {
+          rows = lines.map((line: string) => {
             const parts = line.split(",").map((s: string) => s.trim());
             const name = parts[0] || null;
             const department = parts[1] || null;
             return [name, department];
-          })
-          .filter((r: (string | null)[]) => r[0] !== null); // require at least a name
+          }).filter((r: (string | null)[]) => r[0] !== null); // require at least a name
+        } else {
+          // Handle file upload (CSV)
+          const file = (req as any).file as Express.Multer.File | undefined;
+          if (!file) {
+            return res
+              .status(400)
+              .json({ ok: false, message: "No file uploaded" });
+          }
+
+          const csv = file.buffer.toString("utf8");
+          const lines = csv
+            .split(/\r?\n/)
+            .filter((l: string) => l.trim().length > 0);
+
+          if (lines.length === 0) {
+            return res
+              .status(400)
+              .json({ ok: false, message: "CSV file is empty" });
+          }
+
+          // Assume first line is header, but we will enforce our own header in Sheets
+          const [, ...dataLines] = lines;
+
+          rows = dataLines
+            .map((line: string) => {
+              const parts = line.split(",").map((s: string) => s.trim());
+              const name = parts[0] || null;
+              const department = parts[1] || null;
+              return [name, department];
+            })
+            .filter((r: (string | null)[]) => r[0] !== null); // require at least a name
+        }
 
         const SHEET_TAB = "New Users";
         const header = ["Name", "Department"];
