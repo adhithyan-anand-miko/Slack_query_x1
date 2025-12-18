@@ -17,6 +17,29 @@ export async function registerRoutes(
   // put application routes here
   // prefix all routes with /api
 
+  // Hardcoded password login
+  app.post(
+    "/api/login-password",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { password } = req.body;
+        if (password !== "Omega@2255") {
+          return res.status(401).json({ ok: false, message: "Invalid password" });
+        }
+        // Set session user object
+        req.login(
+          { passwordLogin: true },
+          (err) => {
+            if (err) return next(err);
+            res.json({ ok: true });
+          }
+        );
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
   // use storage to perform CRUD operations on the storage interface
   // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
 

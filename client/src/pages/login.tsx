@@ -8,6 +8,11 @@ export default function LoginPage() {
   const [, setLocation] = useLocation();
   const [checking, setChecking] = useState(true);
 
+  // Password login state
+  const [password, setPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
   // If already logged in (session cookie present), skip login page
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -24,6 +29,30 @@ export default function LoginPage() {
     window.location.href = "/auth/google";
   };
 
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordLoading(true);
+    setPasswordError(null);
+    try {
+      const res = await fetch("/api/login-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setPasswordError(data.message || "Login failed");
+        setPasswordLoading(false);
+        return;
+      }
+      setLocation("/dashboard");
+    } catch (err) {
+      setPasswordError("Network error");
+      setPasswordLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
@@ -36,12 +65,12 @@ export default function LoginPage() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight">Welcome</CardTitle>
-          <CardDescription>Sign in with Google to access the Email Checker dashboard</CardDescription>
+          <CardDescription>Sign in with Google or password to access the Email Checker dashboard</CardDescription>
         </CardHeader>
         <CardContent>
           <Button
             type="button"
-            className="w-full"
+            className="w-full mb-4"
             disabled={checking}
             onClick={handleGoogleLogin}
           >
@@ -54,6 +83,34 @@ export default function LoginPage() {
               "Sign in with Google"
             )}
           </Button>
+          <form onSubmit={handlePasswordLogin} className="space-y-2">
+            <input
+              type="password"
+              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+              placeholder="Enter password"
+              value={password}
+              disabled={checking || passwordLoading}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={checking || passwordLoading}
+            >
+              {passwordLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Sign in with Password"
+              )}
+            </Button>
+            {passwordError && (
+              <div className="text-red-500 text-sm text-center">{passwordError}</div>
+            )}
+          </form>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4 text-center text-sm text-muted-foreground">
           <p>
