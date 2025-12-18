@@ -186,14 +186,16 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
+  const port = parseInt(process.env.PORT || "5000", 10);
+  httpServer.listen(
+    {
     port,
     host: process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1",
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
-  });
+    },
+  );
 })();
 
 export { requireAuth };
