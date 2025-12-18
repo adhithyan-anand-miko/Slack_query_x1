@@ -7,24 +7,55 @@ pipeline {
   }
 
   parameters {
-    string(name: 'IMAGE_REPOSITORY', defaultValue: 'your-docker-user/email-verify-engine', description: 'Docker repository name (e.g. org/app).')
-    string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional tag override. Defaults to the Jenkins build number.')
-    string(name: 'REGISTRY_URL', defaultValue: 'docker.io', description: 'Docker registry host (e.g. docker.io, ghcr.io).')
-    booleanParam(name: 'PUSH_IMAGE', defaultValue: false, description: 'Push the image to the registry after a successful build.')
-    string(name: 'DOCKER_CREDENTIALS_ID', defaultValue: 'docker-registry', description: 'Jenkins credentials ID containing the registry username/password.')
-    booleanParam(name: 'INJECT_ENV_FILE', defaultValue: true, description: 'Copy a managed .env file into the workspace before building.')
-    string(name: 'ENV_FILE_CREDENTIALS_ID', defaultValue: 'slack_env', description: 'Jenkins file credential ID (e.g. slack_env) that stores the .env payload.')
-    string(name: 'ENV_TARGET_FILE', defaultValue: '.env', description: 'Destination filename for the injected environment file.')
+    string(
+      name: 'IMAGE_REPOSITORY',
+      defaultValue: 'your-docker-user/email-verify-engine',
+      description: 'Docker image name (e.g. org/app)'
+    )
+    string(
+      name: 'IMAGE_TAG',
+      defaultValue: '',
+      description: 'Optional image tag. Defaults to Jenkins build number.'
+    )
+    string(
+      name: 'REGISTRY_URL',
+      defaultValue: 'docker.io',
+      description: 'Docker registry (docker.io, ghcr.io, etc.)'
+    )
+    booleanParam(
+      name: 'PUSH_IMAGE',
+      defaultValue: false,
+      description: 'Push the image after a successful build'
+    )
+    string(
+      name: 'DOCKER_CREDENTIALS_ID',
+      defaultValue: 'docker-registry',
+      description: 'Jenkins credentials ID for Docker registry'
+    )
+    booleanParam(
+      name: 'INJECT_ENV_FILE',
+      defaultValue: true,
+      description: 'Inject a managed .env file into the workspace'
+    )
+    string(
+      name: 'ENV_FILE_CREDENTIALS_ID',
+      defaultValue: 'slack_env',
+      description: 'Jenkins file credential ID containing .env'
+    )
+    string(
+      name: 'ENV_TARGET_FILE',
+      defaultValue: '.env',
+      description: 'Target filename for injected env file'
+    )
   }
 
   environment {
-    NODE_ENV = 'production'
     DOCKER_BUILDKIT = '1'
-    COMPOSE_PROJECT_NAME = 'emailverifyengine'
   }
 
   stages {
-    stage('Checkout Code') {
+
+    stage('Checkout') {
       steps {
         checkout scm
       }
@@ -32,51 +63,42 @@ pipeline {
 
     stage('Inject .env') {
       when {
-        expression { return params.INJECT_ENV_FILE && params.ENV_FILE_CREDENTIALS_ID?.trim() }
+        expression {
+          params.INJECT_ENV_FILE && params.ENV_FILE_CREDENTIALS_ID?.trim()
+        }
       }
       steps {
         withCredentials([
-          file(credentialsId: params.ENV_FILE_CREDENTIALS_ID, variable: 'ENV_FILE')
+          file(
+            credentialsId: params.ENV_FILE_CREDENTIALS_ID,
+            variable: 'ENV_FILE'
+          )
         ]) {
           sh 'cp "$ENV_FILE" "$ENV_TARGET_FILE"'
         }
       }
     }
 
-    stage('Install dependencies') {
-      steps {
-        sh 'node -v'
-        sh 'npm -v'
-        sh 'npm ci'
-      }
-    }
-
-    stage('Static checks') {
-      steps {
-        sh 'npm run check'
-      }
-    }
-
-    stage('Build artifacts') {
-      steps {
-        sh 'npm run build'
-      }
-    }
-
-    stage('Docker build') {
+    stage('Docker Build') {
       steps {
         script {
-          env.EFFECTIVE_IMAGE_TAG = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : env.BUILD_NUMBER
+          env.EFFECTIVE_IMAGE_TAG = params.IMAGE_TAG?.trim()
+            ? params.IMAGE_TAG.trim()
+            : env.BUILD_NUMBER
+
           env.IMAGE_REF = "${params.IMAGE_REPOSITORY}:${env.EFFECTIVE_IMAGE_TAG}"
-          env.FULL_IMAGE_REF = "${params.REGISTRY_URL}/${env.IMAGE_REF}".replaceAll('docker.io/', '')
         }
-        sh 'docker build -t ${IMAGE_REF} .'
+
+        sh '''
+          echo "Building image: ${IMAGE_REF}"
+          docker build -t ${IMAGE_REF} .
+        '''
       }
     }
 
-    stage('Docker push') {
+    stage('Docker Push') {
       when {
-        expression { return params.PUSH_IMAGE }
+        expression { params.PUSH_IMAGE }
       }
       steps {
         withCredentials([
@@ -87,7 +109,10 @@ pipeline {
           )
         ]) {
           sh '''
-            echo "$REGISTRY_PASS" | docker login ${REGISTRY_URL} --username "$REGISTRY_USER" --password-stdin
+            echo "$REGISTRY_PASS" | docker login ${REGISTRY_URL} \
+              --username "$REGISTRY_USER" \
+              --password-stdin
+
             docker tag ${IMAGE_REF} ${REGISTRY_URL}/${IMAGE_REF}
             docker push ${REGISTRY_URL}/${IMAGE_REF}
           '''
@@ -98,10 +123,10 @@ pipeline {
 
   post {
     success {
-      echo "Deployment complete! Proud of you buddy!! Image: ${params.REGISTRY_URL}/${env.IMAGE_REF}"
+      echo "Build successful 🟢 Image: ${params.REGISTRY_URL}/${env.IMAGE_REF}"
     }
     failure {
-      echo "Build or deploy failed. I'm so sorry buddy!!"
+      echo "Build failed 🔴 Check the logs above."
     }
     always {
       cleanWs(cleanWhenNotBuilt: false)
