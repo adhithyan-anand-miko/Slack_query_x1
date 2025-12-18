@@ -1,0 +1,168 @@
+# Email Checker – Project Concept & Workflow
+
+## 1. Project Overview
+
+**Email Checker** is a fullstack automation tool for onboarding and Google Workspace email creation. **There is no database in this project—all data storage and workflow state is managed via Google Sheets, which acts as the single source of truth.** It provides a secure, step-by-step workflow for:
+- Fetching Slack users and storing them in a Google Sheet.
+- Uploading new user names via CSV.
+- Processing names and generating unique email IDs.
+- Managing the onboarding process through a web interface with clear, manual control at each step.
+
+## 2. Architecture
+
+### Recommended Integrated Folder Structure
+
+To enable a true single-server, integrated workflow (serving both frontend and backend from one server), you can organize your project as follows:
+
+```
+/email-checker
+  /assets         # Static assets (optional)
+  /client         # React frontend (Vite/CRA/Next.js)
+  /server         # Node.js/Express backend (API, Google Auth, business logic)
+  /shared         # Shared code (types, utils, validation, etc.)
+  .env
+  package.json    # Root scripts, dependencies, and workspace config
+  vite.config.ts  # (if using Vite for client)
+  tsconfig.json   # (if using TypeScript)
+  Dockerfile, docker-compose.yml, etc.
+  README.md, concept.md, etc.
+```
+
+**How it works:**
+- In development:  
+  - Run the backend (`server/index.js`) and frontend (`client` via Vite/CRA) separately, using a proxy for API/auth routes.
+- In production:  
+  - Build the frontend (`cd client && npm run build`).
+  - The backend serves the built frontend from `client/dist` (or `client/build`), so everything runs on a single port.
+- Shared code (e.g., validation, types, utility functions) lives in `/shared` and is imported by both client and server.
+
+**Benefits:**
+- Clean separation of concerns, but easy to share code.
+- One server for both frontend and backend in production.
+- Easy Dockerization and deployment.
+
+**Migration Steps:**
+- Move your React app to `/client` and your Express app to `/server`.
+- Move any shared code to `/shared`.
+- Update your backend to serve the frontend build from `/client/dist` in production.
+- Use a single root `package.json` (or workspaces) to manage dependencies and scripts.
+
+---
+
+**Current Monorepo Structure:**
+```
+/email-checker
+  /backend      # Node.js/Express API, Google OAuth, business logic
+  /frontend     # React app (served by backend in production)
+  /scripts      # Standalone automation scripts
+  /utils        # Shared utility modules (Google Sheets, Slack, etc.)
+  concept.md    # This documentation
+  README.md
+```
+
+- **Backend:** Handles authentication, API endpoints, and business logic. Uses Google OAuth for secure login.
+- **Frontend:** React app for user interaction (login, dashboard, upload, results).
+- **Scripts/Utils:** Core automation logic, reusable in both backend and CLI.
+
+## 3. Authentication Flow
+
+- **Google OAuth 2.0** is used for secure login.
+- The frontend triggers login via `/auth/google` (handled by backend).
+- Backend verifies user, creates a session (cookie-based).
+- All protected API endpoints require authentication.
+
+## 4. Step-by-Step Onboarding Workflow
+
+The onboarding process is **user-driven** and consists of clear, manual steps, each triggered by a dedicated button in the frontend. All data is stored in Google Sheets—no database is used.
+
+### Step 1: Fetch Slack Users
+- **Button:** "Fetch Slack Users"
+- Fetches all Slack users (with pagination and rate limit handling).
+- Writes user data to the "SlackUsers" tab in Google Sheets.
+
+### Step 2: Upload New User List
+- **Button:** "Upload New User List"
+- User uploads a CSV file with new user names.
+- Backend parses the CSV and writes the names to the "New Users" tab in Google Sheets.
+- The process waits for the user to upload before proceeding.
+
+### Step 3: Process New Users
+- **Button:** "Process New Users"
+- Reads names from "New Users", splits into first/last name (first word/last word logic, "Scaler" as fallback).
+- Writes processed names to the "New Users-Processed" tab.
+
+### Step 4: Generate Unique Emails
+- **Button:** "Generate Unique Emails"
+- Reads from "New Users-Processed", checks against "SlackUsers", generates unique emails, and writes to column C ("Email ID") in "New Users-Processed".
+
+### Step 5: Download Results (Optional)
+- **Button:** "Download Results"
+- Allows the user to download the processed list as a CSV.
+
+**Key Points:**
+- Each step is manual and user-driven, not fully automated end-to-end.
+- The UI clearly shows the current step and enables the next only after the previous is complete.
+- **There is no database in this project. All data is persisted in Google Sheets, which acts as the single source of truth for all workflow state and records.**
+
+## 5. Frontend User Experience
+
+- **Login Page:** Google sign-in.
+- **Dashboard:** 
+  - Individual buttons for each workflow step.
+  - Upload or input new users.
+  - Process and view results.
+  - Download processed list.
+
+## 6. Backend API Endpoints
+
+- `/auth/google` – Start Google OAuth login.
+- `/api/protected` – Check authentication/session.
+- `/api/fetch-slack-users` – Run Slack fetch and update Google Sheet.
+- `/api/upload-users` – Accept new user uploads and update Google Sheet.
+- `/api/process-users` – Process names and update Google Sheet.
+- `/api/generate-emails` – Generate unique emails and update Google Sheet.
+- `/api/download-results` – Download processed results as CSV.
+
+## 7. Development & Deployment
+
+### Advanced Unified Dev Workflow
+
+For a more advanced workflow, you can use a single `npm run dev` command at the root to start both backend and frontend (and any other services) in parallel. This is typically managed via the root `package.json` using tools like `concurrently`, `cross-env`, or `npm-run-all`.
+
+**Example root package.json scripts:**
+```json
+"scripts": {
+  "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+  "build": "npm run build --prefix frontend && npm run build --prefix backend",
+  "start": "node backend/index.js"
+}
+```
+Or, for a TypeScript/Node/React project:
+```json
+"scripts": {
+  "dev": "cross-env NODE_ENV=development tsx server/index.ts",
+  "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+  "start": "cross-env NODE_ENV=production node dist/index.js"
+}
+```
+- This allows you to run `npm run dev` at the root and have both backend and frontend running with hot reload, using a proxy for API/auth routes.
+
+- **Development:**
+  - Run backend (`node backend/index.js`) on port 5000.
+  - Run frontend (`npm run dev` in frontend) on port 5173.
+  - Vite proxy forwards `/api`, `/auth`, `/logout` to backend.
+- **Production:**
+  - Build frontend (`npm run build` in frontend).
+  - Backend serves static files from `frontend/dist` on port 5000.
+  - All routes (frontend and API) are unified on a single port.
+
+## 8. Extensibility
+
+- Add new endpoints to backend for more automation (e.g., bulk user creation, reporting).
+- Extend frontend with more workflow steps or analytics.
+- Add more scripts to `/scripts` and expose them via backend APIs.
+
+---
+
+**Summary:**  
+Email Checker is a user-driven onboarding automation tool, with each step clearly separated and controlled via the web interface. All data is stored in Google Sheets, making it easy to audit, share, and extend the workflow.
